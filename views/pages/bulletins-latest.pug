@@ -107,10 +107,10 @@ block content
             option(value='High Salinity Alert') Cảnh báo độ mặn cao
         .form-group
           label Từ ngày
-          input#newBulletinFrom.form-control(type='date')
+          input#newBulletinFrom.form-control(type='text', placeholder='dd/MM/yyyy')
         .form-group
           label Đến ngày
-          input#newBulletinTo.form-control(type='date')
+          input#newBulletinTo.form-control(type='text', placeholder='dd/MM/yyyy')
         .form-group
           label Nội dung
           textarea#newBulletinContent.form-control(rows=4 placeholder='Nội dung công báo...')
@@ -263,6 +263,28 @@ block scripts
       return type; // fallback nếu sau này bạn thêm loại mới
     }
 
+    // Định dạng ISO date (YYYY-MM-DD hoặc ISO string) sang chuỗi dd/MM/yyyy để hiển thị trong input
+    function formatDateToViInput(value) {
+      if (!value) return '';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+
+    // Parse chuỗi dd/MM/yyyy sang YYYY-MM-DD để gửi lên backend
+    function parseViDateToISO(str) {
+      if (!str) return null;
+      const parts = str.split('/');
+      if (parts.length !== 3) return null;
+      const [day, month, year] = parts.map(p => p.trim());
+      if (!day || !month || !year) return null;
+      if (day.length > 2 || month.length > 2 || year.length !== 4) return null;
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+
     function isBulletinEditor() {
       try {
         const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -285,8 +307,8 @@ block scripts
     function buildBulletinCard(b) {
       const card = document.createElement('div');
       card.className = 'bulletin-card-new';
-      const fromDate = b.from_date ? new Date(b.from_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
-      const toDate = b.to_date ? new Date(b.to_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+      const fromDate = b.from_date ? new Date(b.from_date).toLocaleDateString('vi-VN') : '';
+      const toDate = b.to_date ? new Date(b.to_date).toLocaleDateString('vi-VN') : '';
       const type = b.type || 'Routine Bulletin';
       const typeClass = getBulletinTypeClass(type);
       const typeLabel = getBulletinTypeLabel(type);
@@ -442,8 +464,8 @@ block scripts
         "<i class='fas fa-edit'></i> Chỉnh sửa công báo";
       document.getElementById('newBulletinTitle').value = b.title || '';
       document.getElementById('newBulletinType').value = b.type || '';
-      document.getElementById('newBulletinFrom').value = b.from_date || '';
-      document.getElementById('newBulletinTo').value = b.to_date || '';
+      document.getElementById('newBulletinFrom').value = formatDateToViInput(b.from_date);
+      document.getElementById('newBulletinTo').value = formatDateToViInput(b.to_date);
       document.getElementById('newBulletinContent').value = b.content || '';
       document.getElementById('submitBulletinBtn').innerHTML = '<i class="fas fa-save"></i> Cập nhật';
       const delBtn = document.getElementById('deleteBulletinBtn');
@@ -467,10 +489,16 @@ block scripts
       }
       const title = document.getElementById('newBulletinTitle').value.trim();
       const type = document.getElementById('newBulletinType').value;
-      const from = document.getElementById('newBulletinFrom').value;
-      const to = document.getElementById('newBulletinTo').value;
+      const fromInput = document.getElementById('newBulletinFrom').value.trim();
+      const toInput = document.getElementById('newBulletinTo').value.trim();
+      const from = parseViDateToISO(fromInput);
+      const to = parseViDateToISO(toInput);
       const content = document.getElementById('newBulletinContent').value.trim();
       if (!title || !content) { alert('Vui lòng điền đầy đủ thông tin'); return; }
+      if (!from || !to) {
+        alert('Vui lòng nhập ngày theo định dạng dd/MM/yyyy');
+        return;
+      }
       try {
         const token = localStorage.getItem('access_token');
         const method = editingBulletinId ? 'PATCH' : 'POST';
