@@ -7,7 +7,7 @@ async function handleLogin(event) {
   const messageDiv = document.getElementById("loginMessage");
 
   try {
-    const response = await fetch("http://localhost:3000/api/access/login", {
+    const response = await fetch(`${window.API_BASE_URL}/access/login`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -25,7 +25,7 @@ async function handleLogin(event) {
       // Also set cookies for server-side rendering in Pug
       document.cookie = `access_token=${data.metadata.access_token}; path=/; max-age=86400`;
       document.cookie = `user=${encodeURIComponent(
-        JSON.stringify(data.metadata.user)
+        JSON.stringify(data.metadata.user),
       )}; path=/; max-age=86400`;
 
       messageDiv.classList.remove("hidden", "alert-error");
@@ -56,7 +56,8 @@ function logout() {
     localStorage.removeItem("user");
 
     // Clear cookies
-    document.cookie = "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+    document.cookie =
+      "access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     document.cookie = "user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
     window.location.href = "/login";
