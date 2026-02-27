@@ -21,6 +21,11 @@ html(lang='vi')
             h1 EcoMonitor
             span.management-system HỆ THỐNG QUẢN LÝ
 
+        button.navbar-toggle(type='button', aria-label='Toggle navigation', onclick='toggleNavbar()')
+          span
+          span
+          span
+
         span.nav-label Menu
         .navbar-menu
           ul.nav-list
@@ -64,6 +69,8 @@ html(lang='vi')
 
       main.main-content
         .topbar
+          button.topbar-menu-toggle(type='button', aria-label='Toggle menu', onclick='toggleNavbar()')
+            i.fas.fa-bars
           .topbar-title Quản lý môi trường
           .topbar-search
             input(type='text', placeholder='Tìm kiếm dữ liệu...')
@@ -81,7 +88,7 @@ html(lang='vi')
     script(src='/js/auth.js')
     script(src='/js/utils.js')
 
-    //- Set active nav link
+    //- Set active nav link and mobile menu
     script.
       (function() {
         var path = window.location.pathname;
@@ -92,5 +99,53 @@ html(lang='vi')
           }
         });
       })();
+
+      // Mobile menu toggle
+      function toggleNavbar() {
+        var navbar = document.querySelector('.navbar');
+        var toggle = document.querySelector('.navbar-toggle');
+        navbar.classList.toggle('active');
+        toggle.classList.toggle('active');
+      }
+
+      // Close menu when clicking a link (mobile)
+      function setupNavLinks() {
+        var links = document.querySelectorAll('.nav-list a');
+        links.forEach(function(link) {
+          link.addEventListener('click', function() {
+            if (window.innerWidth <= 768) {
+              var navbar = document.querySelector('.navbar');
+              var toggle = document.querySelector('.navbar-toggle');
+              navbar.classList.remove('active');
+              toggle.classList.remove('active');
+            }
+          });
+        });
+      }
+      setupNavLinks();
+
+      // Close menu when clicking outside (mobile)
+      document.addEventListener('click', function(event) {
+        var navbar = document.querySelector('.navbar');
+        var toggle = document.querySelector('.navbar-toggle');
+        var topbarToggle = document.querySelector('.topbar-menu-toggle');
+        
+        if (!navbar.contains(event.target) && !toggle.contains(event.target)) {
+          if ((topbarToggle && !topbarToggle.contains(event.target)) && window.innerWidth <= 768) {
+            navbar.classList.remove('active');
+            toggle.classList.remove('active');
+          }
+        }
+      });
+
+      // Handle window resize
+      window.addEventListener('resize', function() {
+        if (window.innerWidth > 768) {
+          var navbar = document.querySelector('.navbar');
+          var toggle = document.querySelector('.navbar-toggle');
+          navbar.classList.remove('active');
+          toggle.classList.remove('active');
+        }
+      });
 
     block scripts
