@@ -1,0 +1,270 @@
+extends ../layouts/main
+
+block content
+  .monthly-chart-container
+    .chart-controls
+      .form-group
+        label(for='chartYear') Năm
+        input#chartYear.form-control(
+          type='number',
+          min='2020',
+          max='2030',
+          value=new Date().getFullYear()
+        )
+
+      .form-group
+        label(for='chartMonth') Tháng
+        select#chartMonth.form-control
+          option(value='01') Tháng 1
+          option(value='02') Tháng 2
+          option(value='03') Tháng 3
+          option(value='04') Tháng 4
+          option(value='05') Tháng 5
+          option(value='06') Tháng 6
+          option(value='07') Tháng 7
+          option(value='08') Tháng 8
+          option(value='09') Tháng 9
+          option(value='10') Tháng 10
+          option(value='11') Tháng 11
+          option(value='12') Tháng 12
+
+      button.btn.btn-primary#loadChartBtn(onclick='loadMonthlyChart()')
+        i.fas.fa-refresh
+        span Tải biểu đồ
+
+    .chart-section
+      .loading-spinner#chartLoading.hidden
+        i.fas.fa-spinner.fa-spin
+        span Đang tải...
+
+      .chart-wrapper#chartWrapper.hidden
+        canvas#salinityChart
+
+    .comment-section
+      .comment-box
+        h3 Bình luận tháng
+        
+        #commentContent.comment-content.hidden
+          p.forecaster
+            strong Người dự báo:
+            span#forecasterName
+          
+          .comment-text#commentText
+          
+          p.updated-time
+            small Cập nhật lúc:
+            span#updatedTime
+
+        #noComment.comment-placeholder
+          p Chưa có bình luận cho tháng này
+      
+      #commentFormSection.comment-form.hidden
+        h4 Cập nhật bình luận
+        form#commentFormElement(onsubmit='saveMonthlyComment(event)')
+          .form-group
+            label(for='commentText') Bình luận
+            textarea#commentTextarea.form-control(
+              placeholder='Nhập bình luận',
+              rows='4',
+              required
+            )
+          
+          button.btn.btn-primary(type='submit')
+            i.fas.fa-save
+            span Lưu bình luận
+
+block scripts
+  script.
+    let monthlyChart = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      checkCommentFormAccess();
+      document.getElementById('chartMonth').value = String(new Date().getMonth() + 1).padStart(2, '0');
+      loadMonthlyChart();
+    });
+
+    function checkCommentFormAccess() {
+      const token = localStorage.getItem('access_token');
+      const userStr = localStorage.getItem('user');
+      const formSection = document.getElementById('commentFormSection');
+
+      if (!token || !userStr) {
+        formSection.classList.add('hidden');
+        return;
+      }
+
+      try {
+        const user = JSON.parse(userStr);
+        if (user.role === 'admin' || user.role === 'forecaster' || user.role === 'canbocanbovien') {
+          formSection.classList.remove('hidden');
+        } else {
+          formSection.classList.add('hidden');
+        }
+      } catch (e) {
+        console.error('Error parsing user data:', e);
+        formSection.classList.add('hidden');
+      }
+    }
+
+    async function loadMonthlyChart() {
+      const year = document.getElementById('chartYear').value;
+      const month = document.getElementById('chartMonth').value;
+      
+      if (!year || !month) return;
+
+      document.getElementById('chartLoading').classList.remove('hidden');
+
+      try {
+        // Load chart data
+        const chartRes = await fetch(`${window.API_BASE_URL}/salinity/monthly-chart?year=${year}&month=${month}`);
+        const chartData = await chartRes.json();
+
+        if (chartData.metadata && Array.isArray(chartData.metadata)) {
+          displayChart(chartData.metadata);
+        }
+
+        // Load comment data
+        const commentRes = await fetch(`${window.API_BASE_URL}/salinity/monthly-comment?year=${year}&month=${month}`);
+        const commentData = await commentRes.json();
+
+        if (commentData.metadata) {
+          if (commentData.metadata.comment) {
+            document.getElementById('commentContent').classList.remove('hidden');
+            document.getElementById('noComment').classList.add('hidden');
+            document.getElementById('commentText').textContent = commentData.metadata.comment;
+            document.getElementById('forecasterName').textContent = commentData.metadata.forecaster_name || 'N/A';
+            document.getElementById('updatedTime').textContent = new Date(commentData.metadata.updated_at).toLocaleString('vi-VN');
+            document.getElementById('commentTextarea').value = commentData.metadata.comment;
+          } else {
+            document.getElementById('commentContent').classList.add('hidden');
+            document.getElementById('noComment').classList.remove('hidden');
+            document.getElementById('commentTextarea').value = '';
+          }
+        }
+      } catch (error) {
+        console.error('Error loading monthly chart:', error);
+        showNotification('Lỗi tải dữ liệu', 'error');
+      } finally {
+        document.getElementById('chartLoading').classList.add('hidden');
+      }
+    }
+
+    function displayChart(data) {
+      document.getElementById('chartWrapper').classList.remove('hidden');
+      
+      const ctx = document.getElementById('salinityChart').getContext('2d');
+      
+      if (monthlyChart) {
+        monthlyChart.destroy();
+      }
+
+      const labels = data.map(d => d.day);
+      const values = data.map(d => d.salinity);
+
+      monthlyChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Độ mặn (ppt)',
+            data: values,
+            borderColor: '#0066cc',
+            backgroundColor: 'rgba(0, 102, 204, 0.1)',
+            tension: 0.1,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: '#0066cc',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              display: true,
+              position: 'top'
+            },
+            title: {
+              display: true,
+              text: 'Biểu đồ độ mặn theo ngày'
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: false,
+              title: {
+                display: true,
+                text: 'Độ mặn (ppt)'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Ngày'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    async function saveMonthlyComment(event) {
+      event.preventDefault();
+      
+      const year = document.getElementById('chartYear').value;
+      const month = document.getElementById('chartMonth').value;
+      const comment = document.getElementById('commentTextarea').value;
+      const token = localStorage.getItem('access_token');
+
+      if (!token) {
+        showNotification('Vui lòng đăng nhập để lưu bình luận', 'error');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!comment.trim()) {
+        showNotification('Vui lòng nhập bình luận', 'error');
+        return;
+      }
+
+      const submitBtn = document.querySelector('#commentFormElement button[type="submit"]');
+      const originalBtnText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang lưu...';
+
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/monthly-comment`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ year, month, comment })
+        });
+
+        const data = await response.json();
+
+        if (response.ok || response.status === 201) {
+          showNotification('Lưu bình luận thành công!', 'success');
+          await new Promise(r => setTimeout(r, 500));
+          loadMonthlyChart();
+        } else if (response.status === 401) {
+          showNotification('Token hết hạn, vui lòng đăng nhập lại', 'error');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        } else if (response.status === 403) {
+          showNotification('Bạn không có quyền lưu bình luận', 'error');
+        } else {
+          showNotification(data.message || 'Lỗi lưu bình luận', 'error');
+        }
+      } catch (error) {
+        console.error('Error saving comment:', error);
+        showNotification('Lỗi kết nối: ' + error.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+      }
+    }

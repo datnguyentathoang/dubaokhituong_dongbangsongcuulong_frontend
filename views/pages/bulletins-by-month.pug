@@ -1,0 +1,271 @@
+extends ../layouts/main
+
+block content
+  .bulletins-container
+    .bulletins-controls
+      .control-group
+        label(for='bulletinMonth') Chọn tháng
+        .date-filter
+          input#bulletinMonth.form-control(
+            type='month',
+            value=new Date().toISOString().substring(0, 7)
+          )
+          button.btn.btn-primary(onclick='loadBulletinsByMonth()')
+            i.fas.fa-search
+            span Tìm kiếm
+
+    #createBulletinSection.create-bulletin-section.hidden
+      h3 Tạo công báo mới
+      form#bulletinForm(onsubmit='saveBulletin(event)')
+        .form-group
+          label(for='fromDate') Từ ngày
+          input#fromDate.form-control(type='date', required)
+
+        .form-group
+          label(for='toDate') Đến ngày
+          input#toDate.form-control(type='date', required)
+
+        .form-group
+          label(for='bulletinTitle') Tiêu đề
+          input#bulletinTitle.form-control(
+            type='text',
+            placeholder='Nhập tiêu đề công báo',
+            required
+          )
+
+        .form-group
+          label(for='bulletinContent') Nội dung
+          textarea#bulletinContent.form-control(
+            placeholder='Nhập nội dung công báo',
+            rows='6',
+            required
+          )
+
+        button.btn.btn-primary(type='submit')
+          i.fas.fa-plus
+          span Tạo công báo
+
+    .loading-spinner#bulletinsLoading.hidden
+      i.fas.fa-spinner.fa-spin
+      span Đang tải...
+
+    .bulletins-list#bulletinsList
+
+block scripts
+  script.
+    document.addEventListener('DOMContentLoaded', function() {
+      checkCreateBulletinAccess();
+      loadBulletinsByMonth();
+    });
+
+    function isBulletinEditor() {
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return user && (user.role === 'admin' || user.role === 'forecaster' || user.role === 'canbocanbovien');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function checkCreateBulletinAccess() {
+      const token = localStorage.getItem('access_token');
+      const section = document.getElementById('createBulletinSection');
+
+      if (!token || !isBulletinEditor()) {
+        section.classList.add('hidden');
+        return;
+      }
+      section.classList.remove('hidden');
+    }
+
+    async function loadBulletinsByMonth() {
+      const month = document.getElementById('bulletinMonth').value;
+      if (!month) return;
+
+      document.getElementById('bulletinsLoading').classList.remove('hidden');
+
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/bulletins/?month=${month}`);
+        const data = await response.json();
+
+        if (data.metadata && Array.isArray(data.metadata)) {
+          displayBulletins(data.metadata);
+        }
+      } catch (error) {
+        console.error('Error loading bulletins:', error);
+        showNotification('Lỗi tải công báo', 'error');
+      } finally {
+        document.getElementById('bulletinsLoading').classList.add('hidden');
+      }
+    }
+
+    function displayBulletins(bulletins) {
+      const listDiv = document.getElementById('bulletinsList');
+      listDiv.innerHTML = '';
+
+      if (bulletins.length === 0) {
+        listDiv.innerHTML = '<div class="empty-state"><p>Không có công báo cho tháng này</p></div>';
+        return;
+      }
+
+      bulletins.forEach(bulletin => {
+        const card = document.createElement('div');
+        card.className = 'bulletin-card';
+        let inner = `
+          <div class="bulletin-header">
+            <h3>${bulletin.title}</h3>
+            <span class="bulletin-date">${new Date(bulletin.created_at).toLocaleDateString('vi-VN')}</span>
+          </div>
+          <div class="bulletin-meta">
+            <span class="date-range">
+              <i class="fas fa-calendar"></i>
+              ${new Date(bulletin.from_date).toLocaleDateString('vi-VN')} 
+              - ${new Date(bulletin.to_date).toLocaleDateString('vi-VN')}
+            </span>
+          </div>
+          <div class="bulletin-content">
+            ${bulletin.content}
+          </div>
+        `;
+        if (isBulletinEditor()) {
+          inner += `
+            <div class="bulletin-actions" style="margin-top:8px; text-align:right">
+              <button class="btn btn-icon btn-sm edit-btn" title="Chỉnh sửa"><i class="fas fa-edit"></i></button>
+              <button class="btn btn-icon btn-sm delete-btn" title="Xóa"><i class="fas fa-trash"></i></button>
+            </div>
+          `;
+        }
+        card.innerHTML = inner;
+        if (isBulletinEditor()) {
+          card.querySelector('.edit-btn').addEventListener('click', () => openEditBulletinFromMonth(bulletin));
+          card.querySelector('.delete-btn').addEventListener('click', () => deleteBulletinFromMonth(bulletin.id));
+        }
+        listDiv.appendChild(card);
+      });
+    }
+
+    let editingBulletinMonthId = null;
+    async function saveBulletin(event) {
+      event.preventDefault();
+
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        showNotification('Vui lòng đăng nhập để tạo công báo', 'error');
+        window.location.href = '/login';
+        return;
+      }
+
+      const fromDateVal = document.getElementById('fromDate').value;
+      const toDateVal = document.getElementById('toDate').value;
+      const titleVal = document.getElementById('bulletinTitle').value;
+      const contentVal = document.getElementById('bulletinContent').value;
+
+      // Validate dates
+      if (!fromDateVal || !toDateVal) {
+        showNotification('Vui lòng nhập đầy đủ ngày tháng', 'error');
+        return;
+      }
+
+      if (new Date(fromDateVal) > new Date(toDateVal)) {
+        showNotification('Ngày bắt đầu phải nhỏ hơn ngày kết thúc', 'error');
+        return;
+      }
+
+      if (!titleVal.trim()) {
+        showNotification('Vui lòng nhập tiêu đề', 'error');
+        return;
+      }
+
+      if (!contentVal.trim()) {
+        showNotification('Vui lòng nhập nội dung', 'error');
+        return;
+      }
+
+      const bulletin = {
+        from_date: fromDateVal,
+        to_date: toDateVal,
+        title: titleVal,
+        content: contentVal
+      };
+
+      const submitBtn = document.querySelector('#bulletinForm button[type="submit"]');
+      const originalBtnText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = editingBulletinMonthId ? '<i class=\'fas fa-spinner fa-spin\'></i> Đang cập nhật...' : '<i class=\'fas fa-spinner fa-spin\'></i> Đang tạo...';
+
+      try {
+        const method = editingBulletinMonthId ? 'PATCH' : 'POST';
+        const url = editingBulletinMonthId ? `${window.API_BASE_URL}/salinity/bulletins/${editingBulletinMonthId}` : `${window.API_BASE_URL}/salinity/bulletins/`;
+        const response = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(bulletin)
+        });
+
+        const data = await response.json();
+
+        if (response.ok || response.status === 201) {
+          if (editingBulletinMonthId) {
+            showNotification('Cập nhật công báo thành công!', 'success');
+          } else {
+            showNotification('Tạo công báo thành công!', 'success');
+          }
+          document.getElementById('bulletinForm').reset();
+          const heading = document.querySelector('#createBulletinSection h3');
+          if (heading) heading.textContent = 'Tạo công báo mới';
+          editingBulletinMonthId = null;
+          // Reload bulletins
+          await new Promise(r => setTimeout(r, 500));
+          loadBulletinsByMonth();
+          if (typeof loadDashboard === 'function') loadDashboard();
+        } else if (response.status === 401) {
+          showNotification('Token hết hạn, vui lòng đăng nhập lại', 'error');
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+        } else if (response.status === 403) {
+          showNotification('Bạn không có quyền tạo công báo', 'error');
+        } else {
+          showNotification(data.message || 'Lỗi tạo công báo: ' + data.message, 'error');
+        }
+      } catch (error) {
+        console.error('Error saving bulletin:', error);
+        showNotification('Lỗi kết nối: ' + error.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+      }
+    }
+
+    function openEditBulletinFromMonth(bulletin) {
+      editingBulletinMonthId = bulletin.id;
+      document.getElementById('fromDate').value = bulletin.from_date || '';
+      document.getElementById('toDate').value = bulletin.to_date || '';
+      document.getElementById('bulletinTitle').value = bulletin.title || '';
+      document.getElementById('bulletinContent').value = bulletin.content || '';
+      const heading = document.querySelector('#createBulletinSection h3');
+      if (heading) heading.textContent = 'Chỉnh sửa công báo';
+    }
+
+    async function deleteBulletinFromMonth(id) {
+      if (!confirm('Bạn có chắc muốn xóa công báo này?')) return;
+      try {
+        const token = localStorage.getItem('access_token');
+        const resp = await fetch(`${window.API_BASE_URL}/salinity/bulletins/${id}`, {
+          method: 'DELETE',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (resp.ok) {
+          loadBulletinsByMonth();
+          if (typeof loadDashboard === 'function') loadDashboard();
+        } else {
+          const d = await resp.json();
+          showNotification(d.message || 'Lỗi xóa công báo', 'error');
+        }
+      } catch (e) {
+        showNotification('Lỗi kết nối: ' + e.message, 'error');
+      }
+    }

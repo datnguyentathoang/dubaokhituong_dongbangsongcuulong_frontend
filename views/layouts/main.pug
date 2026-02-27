@@ -1,0 +1,96 @@
+doctype html
+html(lang='vi')
+  head
+    meta(charset='UTF-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1.0')
+    title #{title} - Giám sát độ mặn & Thời tiết
+    link(rel='stylesheet', href='/css/style.css')
+    link(rel='stylesheet', href='/css/dashboard-custom.css')
+    link(rel='stylesheet', href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css')
+    script(src='https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js')
+    script.
+      window.API_BASE_URL = '#{apiBase}';
+    block head
+
+  body
+    .container-layout
+      nav.navbar
+        .navbar-brand
+          i.fas.fa-water(style='color:#60a5fa;font-size:22px')
+          .brand-text
+            h1 EcoMonitor
+            span.management-system HỆ THỐNG QUẢN LÝ
+
+        span.nav-label Menu
+        .navbar-menu
+          ul.nav-list
+            li
+              a(href='/dashboard')
+                i.fas.fa-th-large
+                span Tổng quan
+            li
+              a(href='/monthly-chart')
+                i.fas.fa-chart-line
+                span Biểu đồ tháng
+            li
+              a(href='/stations')
+                i.fas.fa-map-marker-alt
+                span Danh sách trạm
+            li
+              a(href='/bulletins-latest')
+                i.fas.fa-newspaper
+                span Công báo
+            li
+              a(href='/weather')
+                i.fas.fa-cloud-sun
+                span Thời tiết
+
+        .nav-user
+          if user
+            .user-info
+              .user-avatar
+                - var avatarChar = (user && (user.username || user.id)) ? String(user.username || user.id) : 'U';
+                | #{avatarChar.charAt(0).toUpperCase()}
+              .user-details
+                .user-name= user.username || user.id
+                .user-role Người dùng
+            button.btn-logout(onclick='logout()')
+              i.fas.fa-sign-out-alt
+              span Đăng xuất
+          else
+            a.btn-login-sidebar(href='/login')
+              i.fas.fa-sign-in-alt
+              span Đăng nhập
+
+      main.main-content
+        .topbar
+          .topbar-title Quản lý môi trường
+          .topbar-search
+            input(type='text', placeholder='Tìm kiếm dữ liệu...')
+          .topbar-actions
+            i.fas.fa-bell
+            .user-avatar-mini
+              - var miniChar = (user && (user.username || user.id)) ? String(user.username || user.id) : 'U';
+              | #{miniChar.charAt(0).toUpperCase()}
+        .page-header
+          h2= title
+
+        block content
+
+    script(src='/js/api.js')
+    script(src='/js/auth.js')
+    script(src='/js/utils.js')
+
+    //- Set active nav link
+    script.
+      (function() {
+        var path = window.location.pathname;
+        var links = document.querySelectorAll('.nav-list a');
+        links.forEach(function(link) {
+          if (link.getAttribute('href') === path) {
+            link.classList.add('active');
+          }
+        });
+      })();
+
+    block scripts

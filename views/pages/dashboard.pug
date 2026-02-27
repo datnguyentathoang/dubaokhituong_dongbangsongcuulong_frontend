@@ -1,0 +1,470 @@
+extends ../layouts/main
+
+block content
+  .dashboard-container
+    .stats-grid
+      .stat-card
+        .stat-icon.icon-salinity
+          i.fas.fa-droplet
+        .stat-content
+          h3 Độ mặn trung bình (30d)
+          .stat-value#avgSalinity
+            i.fas.fa-spinner.fa-spin
+          .stat-change.positive#salinityChange
+            i.fas.fa-arrow-down
+            | -1.2%
+
+      .stat-card
+        .stat-icon.icon-stations
+          i.fas.fa-broadcast-tower
+        .stat-content
+          h3 Tổng số trạm
+          .stat-value#stationCount
+            i.fas.fa-spinner.fa-spin
+          .stat-change.positive#stationChange
+            i.fas.fa-arrow-up
+            | +4%
+
+      .stat-card
+        .stat-icon.icon-bulletins
+          i.fas.fa-file-alt
+        .stat-content
+          h3 Công báo hàng tháng
+          .stat-value#bulletinCount
+            i.fas.fa-spinner.fa-spin
+          .stat-change.positive#bulletinChange
+            i.fas.fa-arrow-up
+            | +10%
+
+    .dashboard-grid
+      .dashboard-left
+        .dashboard-section
+          .section-header
+            h3 Xu hướng độ mặn hàng tháng
+            .section-meta
+              select#yearSelect.form-control-compact(onchange='updateChart()')
+                option(value='2024') 2024
+                option(value='2023') 2023
+                option(value='2025') 2025
+              select#periodSelect.form-control-compact
+                option(value='all') Cả năm
+                option(value='h1') Nửa năm I
+                option(value='h2') Nửa năm II
+        .dashboard-section
+          img.dashboard-image(src='https://imgcdn.tapchicongthuong.vn/tcct-media/22/3/6/dong-bang-song-cuu-long.jpg' alt='Đồng bằng sông Cửu Long')
+
+        // latest bulletin widget
+        .dashboard-section
+          .section-header
+            h3
+              i.fas.fa-newspaper(style='color:var(--blue-400);margin-right:8px')
+              | Công báo mới nhất
+          #dashboardLatestBulletin
+
+      .dashboard-right
+        .weather-widget
+          .weather-header
+            h3
+              i.fas.fa-cloud-sun(style='margin-right:6px')
+              span#weatherDistrictNameWidget Thời tiết địa phương
+            i.fas.fa-cloud
+          .weather-select
+            select#widgetDistrictSelect.form-control
+              option(value='') -- Chọn xã --
+
+          .weather-content
+            .weather-temp 24°C
+            .weather-condition Nhiều mây
+            .weather-details
+              .detail
+                strong 65%
+                span Độ ẩm
+              .detail
+                strong 12km/h
+                span Gió
+              .detail
+                strong Thấp
+                span Cảm nhận
+        .forecast-timeline
+          #widgetForecastSlots
+        
+        .dashboard-section
+          .section-header
+            h3 Trạng thái trạm hoạt động
+            a.view-all(href='/stations') Xem tất cả trạm
+
+          .table-responsive
+            table.table
+              thead
+                tr
+                  th ID TRẠM
+                  th ĐỊA ĐIỂM
+                  th ĐỘ MẶN CUỐI
+                  th NHIỆT ĐỘ
+                  th TRẠNG THÁI
+                  th CÁC HÀNH ĐỘNG
+              tbody#stationTableBody
+
+        .dashboard-section
+          .section-header
+            h3 Tài nguyên nhanh
+
+          .resources-list
+            .resource-item
+              i.fas.fa-download
+              .resource-info
+                .resource-title Xuất dữ liệu hàng tuần
+                .resource-desc Tải dữ liệu của tuần này
+              i.fas.fa-chevron-right(style='color:var(--text-muted);margin-left:auto')
+
+            .resource-item
+              i.fas.fa-exclamation-triangle
+              .resource-info
+                .resource-title Quy trình khẩn cấp
+                .resource-desc Hướng dẫn và phản ứng nhanh
+              i.fas.fa-chevron-right(style='color:var(--text-muted);margin-left:auto')
+
+            .resource-item
+              i.fas.fa-headset
+              .resource-info
+                .resource-title Liên hệ chuyên gia
+                .resource-desc Nhận hỗ trợ từ các chuyên gia
+              i.fas.fa-chevron-right(style='color:var(--text-muted);margin-left:auto')
+
+block scripts
+  script.
+    let salinitytrendChart = null;
+
+    document.addEventListener('DOMContentLoaded', async function() {
+      loadDashboard();
+      loadStations();
+      await initChart();
+      loadWeatherWidget();
+      loadLatestBulletin(); // fetch newest bulletin for dashboard
+    });
+
+    async function loadDashboard() {
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/dashboard`);
+        const data = await response.json();
+        if (data.metadata) {
+          const avg = data.metadata.averageSalinity;
+          document.getElementById('avgSalinity').textContent =
+            (avg !== null && avg !== undefined ? avg.toFixed(1) : '—') + ' PSU';
+          document.getElementById('stationCount').textContent =
+            data.metadata.stationCount || '—';
+          document.getElementById('bulletinCount').textContent =
+            data.metadata.bulletinCount || '—';
+        }
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+        document.getElementById('avgSalinity').textContent = '—';
+        document.getElementById('stationCount').textContent = '—';
+        document.getElementById('bulletinCount').textContent = '—';
+      }
+    }
+
+    async function loadStations() {
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/stations/all-station`);
+        const data = await response.json();
+        if (data.metadata && Array.isArray(data.metadata)) {
+          displayTopStations(data.metadata.slice(0, 3));
+        }
+      } catch (error) {
+        console.error('Error loading stations:', error);
+      }
+    }
+
+    function displayTopStations(stations) {
+      const tbody = document.getElementById('stationTableBody');
+      tbody.innerHTML = '';
+      if (!stations.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Không có dữ liệu</td></tr>';
+        return;
+      }
+      stations.forEach(station => {
+        const row = document.createElement('tr');
+        const status = station.status || 'STABLE';
+        const statusLabel = status === 'STABLE' ? 'STABLE' : status.toUpperCase();
+        const statusClass = statusLabel === 'STABLE' ? 'status-stable' : 'status-caution';
+        row.innerHTML = `
+          <td><strong style="color:var(--blue-400)">${station.station_id}</strong></td>
+          <td>${station.station_name}</td>
+          <td>${station.max_salinity?.toFixed(2) || 'N/A'} PSU</td>
+          <td>22.1°C</td>
+          <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+          <td>
+            <button class="btn btn-icon btn-sm" title="More" onclick="window.location.href='/stations'">
+              <i class="fas fa-ellipsis-v"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    async function initChart() {
+      const year = document.getElementById('yearSelect').value || new Date().getFullYear();
+      await updateChart(year);
+    }
+
+    async function updateChart(year = null) {
+      const selectedYear = year || document.getElementById('yearSelect').value || new Date().getFullYear();
+      const ctx = document.getElementById('salinitytrendChart');
+      if (!ctx) return;
+
+      try {
+        const monthlyData = [];
+        const monthlyAverages = [];
+
+        // Fetch data for all 12 months
+        for (let month = 1; month <= 12; month++) {
+          try {
+            const response = await fetch(`${window.API_BASE_URL}/salinity/monthly-chart?year=${selectedYear}&month=${month}`);
+            const data = await response.json();
+            if (data.metadata && Array.isArray(data.metadata) && data.metadata.length > 0) {
+              const avg = data.metadata.reduce((sum, d) => sum + parseFloat(d.salinity), 0) / data.metadata.length;
+              monthlyAverages.push(parseFloat(avg.toFixed(2)));
+            } else {
+              monthlyAverages.push(0);
+            }
+          } catch (e) {
+            console.warn(`Error fetching month ${month}:`, e);
+            monthlyAverages.push(0);
+          }
+        }
+
+        // Calculate trend line (3-month moving average)
+        const trendData = monthlyAverages.map((val, idx) => {
+          if (idx < 2) return monthlyAverages[idx];
+          const avg = (monthlyAverages[idx - 2] + monthlyAverages[idx - 1] + monthlyAverages[idx]) / 3;
+          return parseFloat(avg.toFixed(2));
+        });
+
+        // Vietnamese month labels
+        const labels = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
+
+        // Destroy existing chart if it exists
+        if (salinitytrendChart) {
+          salinitytrendChart.destroy();
+        }
+
+        salinitytrendChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                type: 'line',
+                label: 'Xu hướng',
+                data: trendData,
+                borderColor: '#60a5fa',
+                backgroundColor: 'transparent',
+                borderWidth: 2.5,
+                fill: false,
+                tension: 0.4,
+                pointRadius: 0,
+                order: 1,
+              },
+              {
+                type: 'bar',
+                label: 'Trung bình hàng tháng',
+                data: monthlyAverages,
+                backgroundColor: 'rgba(59, 130, 246, 0.35)',
+                borderColor: 'rgba(59, 130, 246, 0.6)',
+                borderWidth: 1,
+                borderRadius: 3,
+                order: 2,
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: {
+                beginAtZero: false,
+                min: 0,
+                grid: { color: 'rgba(255,255,255,0.05)' },
+                ticks: { color: '#8892a4', font: { size: 11 } },
+              },
+              x: {
+                grid: { display: false },
+                ticks: { 
+                  color: '#8892a4', 
+                  font: { size: 11 },
+                  callback: function(val) { return this.getLabelForValue(val); }
+                }
+              }
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error loading chart data:', error);
+      }
+    }
+
+    // === weather widget helpers ===
+    async function loadWeatherWidget() {
+      try {
+        // fetch districts and populate select
+        const resp = await fetch(`${window.API_BASE_URL}/weather/districts`);
+        const data = await resp.json();
+        if (!(data.metadata && data.metadata.length)) return;
+        populateWidgetDistricts(data.metadata);
+        // choose first by default
+        const first = data.metadata[0];
+        if (first) fetchWidgetForecast(first);
+      } catch (e) {
+        console.error('Error loading dashboard weather widget:', e);
+      }
+    }
+
+    function populateWidgetDistricts(list) {
+      const sel = document.getElementById('widgetDistrictSelect');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- Chọn xã --</option>';
+      list.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.ma_xa;
+        opt.textContent = item.district_name ? `${item.district_name} (${item.ma_xa})` : item.ma_xa;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', function() {
+        const ma = this.value;
+        console.log('district select changed to', ma);
+        const selected = list.find(d => d.ma_xa === ma);
+        if (ma && selected) fetchWidgetForecast(selected);
+      });
+    }
+
+    async function fetchWidgetForecast(district) {
+      if (!district || !district.ma_xa) return;
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        showNotification('Vui lòng đăng nhập để xem thời tiết', 'error');
+        return;
+      }
+      try {
+        const wres = await fetch(`${window.API_BASE_URL}/weather/forecast/${district.ma_xa}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!wres.ok) {
+          console.warn('widget forecast response not ok', wres.status);
+          showNotification('Không thể tải dự báo thời tiết', 'error');
+          return;
+        }
+        const wdata = await wres.json();
+        if (wdata.metadata && wdata.metadata.length) {
+          const now = wdata.metadata[0];
+          document.querySelector('.weather-temp').textContent =
+            (now.temperature !== undefined ? Math.round(now.temperature) : '--') + '°C';
+          document.querySelector('.weather-condition').textContent = now.weather || '';
+          const nameSpan = document.getElementById('weatherDistrictNameWidget');
+          if (nameSpan) nameSpan.textContent = `${district.district_name || district.ma_xa}`;
+          const details = document.querySelectorAll('.weather-details .detail strong');
+          if (details[0]) details[0].textContent = now.humidity != null ? now.humidity + '%' : '--';
+          if (details[1]) details[1].textContent = now.wind_speed != null ? now.wind_speed + ' m/s' : '--';
+          if (details[2]) details[2].textContent = now.feels_like != null ? 'Cảm nhận ' + Math.round(now.feels_like) + '°C' : '—';
+          // render slots
+          renderWidgetForecast(slots = wdata.metadata);
+        }
+      } catch (e) {
+        console.error('Error fetching widget forecast:', e);
+        showNotification('Lỗi khi lấy dữ liệu thời tiết', 'error');
+      }
+    }
+
+    function renderWidgetForecast(slots) {
+      const slotsDiv = document.getElementById('widgetForecastSlots');
+      if (!slotsDiv) return;
+      slotsDiv.innerHTML = '';
+      slots.forEach(slot => {
+        const card = document.createElement('div');
+        card.className = 'forecast-card';
+        const weatherIcon = getWeatherIcon(slot.weather);
+        card.innerHTML = `
+          <div class="forecast-time"><i class="fas fa-clock"></i>${slot.time}</div>
+          <div class="forecast-main">
+            <div class="weather-icon">${weatherIcon}</div>
+            <div class="temperature">
+              <div class="temp-main">${Math.round(slot.temperature)}°C</div>
+              <div class="temp-feels">Cảm giác ${Math.round(slot.feels_like)}°C</div>
+            </div>
+          </div>
+          <div class="forecast-details">
+            <div class="detail-item"><i class="fas fa-droplets"></i><span>Độ ẩm: ${slot.humidity}%</span></div>
+            <div class="detail-item"><i class="fas fa-wind"></i><span>Gió: ${slot.wind_speed} m/s</span></div>
+            <div class="detail-item"><i class="fas fa-cloud-rain"></i><span>Mưa: ${slot.rain} mm</span></div>
+            <div class="detail-item"><i class="fas fa-cloud"></i><span>${slot.weather}</span></div>
+          </div>
+        `;
+        slotsDiv.appendChild(card);
+      });
+    }
+
+    function getWeatherIcon(weather) {
+      const weatherLower = weather.toLowerCase();
+      
+      if (weatherLower.includes('mưa') || weatherLower.includes('rain')) {
+        return '<i class="fas fa-cloud-rain"></i>';
+      } else if (weatherLower.includes('nắng') || weatherLower.includes('sunny')) {
+        return '<i class="fas fa-sun"></i>';
+      } else if (weatherLower.includes('mây') || weatherLower.includes('cloud')) {
+        return '<i class="fas fa-cloud"></i>';
+      } else if (weatherLower.includes('sương') || weatherLower.includes('fog')) {
+        return '<i class="fas fa-cloud-fog"></i>';
+      } else {
+        return '<i class="fas fa-cloud"></i>';
+      }
+    }
+
+    // ==== bulletin helpers for dashboard ====
+    function getBulletinTypeClass(type) {
+      if (!type) return 'btype-routine';
+      const t = type.toLowerCase();
+      if (t.includes('alert') || t.includes('salinity')) return 'btype-alert';
+      if (t.includes('monthly') || t.includes('report')) return 'btype-monthly';
+      return 'btype-routine';
+    }
+
+    async function loadLatestBulletin() {
+      try {
+        const res = await fetch(`${window.API_BASE_URL}/salinity/bulletins/latest`);
+        const data = await res.json();
+        if (data.metadata && Array.isArray(data.metadata) && data.metadata.length) {
+          renderDashboardBulletinCard(data.metadata[0]);
+        } else {
+          const ctr = document.getElementById('dashboardLatestBulletin');
+          if (ctr) ctr.innerHTML = '<p style="color:var(--text-muted);font-size:13px">Chưa có công báo</p>';
+        }
+      } catch (e) {
+        console.error('Error loading latest bulletin:', e);
+      }
+    }
+
+    function renderDashboardBulletinCard(b) {
+      const container = document.getElementById('dashboardLatestBulletin');
+      if (!container) return;
+      container.innerHTML = '';
+      const card = document.createElement('div');
+      card.className = 'bulletin-card-new';
+      const fromDate = b.from_date ? new Date(b.from_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+      const toDate = b.to_date ? new Date(b.to_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+      const typeClass = getBulletinTypeClass(b.type);
+      let inner = `
+        <div class="bcn-top">
+          <span class="btype-badge ${typeClass}">${b.type || 'Công báo'}</span>
+          <span class="bcn-date">${fromDate} - ${toDate}</span>
+        </div>
+        <h3 class="bcn-title">${b.title || 'Không có tiêu đề'}</h3>
+        <p class="bcn-preview">${(b.content||'').slice(0,100)}...</p>
+      `;
+      card.innerHTML = inner;
+      card.addEventListener('click', () => {
+        window.location.href = '/bulletins-latest';
+      });
+      container.appendChild(card);
+    }

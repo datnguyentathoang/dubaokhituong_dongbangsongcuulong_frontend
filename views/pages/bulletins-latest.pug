@@ -1,0 +1,459 @@
+extends ../layouts/main
+
+block content
+  .bulletins-page
+    .bulletins-page-header
+      .bulletins-title-block
+        h2
+          i.fas.fa-newspaper(style='color:var(--blue-400);margin-right:8px')
+          | Công báo Độ mặn & Thời tiết
+        p.subtitle Quản lý môi trường theo thời gian thực và dự báo vùng
+      .bulletins-actions
+        .archive-select-wrapper
+          span LƯU TRỮ:
+          select#archiveMonth.form-control-sm
+            option(value='') Chọn tháng
+            option(value='2025-10') Oct 2025
+            option(value='2025-09') Sep 2025
+            option(value='2025-08') Aug 2025
+            option(value='2025-07') Jul 2025
+        button.btn.btn-primary#createBulletinBtn(onclick='openCreateBulletin()')
+          i.fas.fa-plus
+          | Tạo công báo
+
+    .bulletins-layout
+      .bulletins-column
+        .bulletins-list-header
+          .bulletins-list-title
+            i.fas.fa-list
+            span Công báo mới nhất
+          .bulletins-list-filter
+            span.filter-label LƯU TRỮ:
+            select#archiveMonthSmall.form-control-compact
+              option(value='') Chọn tháng
+
+        .loading-spinner#bulletinsLoading.hidden
+          i.fas.fa-spinner.fa-spin
+          span Đang tải...
+
+        #bulletinsList
+
+        .load-more-wrapper
+          button.btn.btn-secondary.btn-load-more#loadMoreBtn(onclick='loadMoreBulletins()')
+            | Tải thêm công báo
+
+      .widgets-column
+        .weather-compact-widget
+          .wcw-header
+            i.fas.fa-cloud-sun(style='color:var(--cyan-400)')
+            h3 Dự báo thời tiết 3 giờ
+          .wcw-search
+            label(for='communeSelect') Chọn xã
+            .wcw-input-row
+              select#communeSelect.form-control
+                option(value='') -- Chọn một xã --
+              button.btn.btn-primary.btn-sm#weatherSearchBtn(onclick='searchWeatherForecast()')
+                i.fas.fa-search
+          .wcw-location-name#wcwLocationName(style='display:none')
+            span Hiển thị dự báo cho:&nbsp;
+            strong#wcwLocationNameText
+          canvas#weatherChart(style='width:100%;height:200px;')
+          // old slot list kept for fallback
+          #wcwForecastList.wcw-forecast-list(style='display:none;')
+          .wcw-station-bar#wcwStationBar(style='display:none')
+            i.fas.fa-map-marker-alt
+            span#wcwStationText
+
+        .quick-resources-widget
+          .qrw-header
+            span TÀI NGUYÊN NHANH
+          .qrw-list
+            .qrw-item(onclick='exportWeeklyData()')
+              .qrw-icon
+                i.fas.fa-download
+              .qrw-text Xuất dữ liệu hàng tuần
+              i.fas.fa-chevron-right.qrw-arrow
+            .qrw-item(onclick='viewEmergencyProcedures()')
+              .qrw-icon.qrw-icon-warn
+                i.fas.fa-exclamation-triangle
+              .qrw-text Quy trình khẩn cấp
+              i.fas.fa-chevron-right.qrw-arrow
+            .qrw-item(onclick='contactExpert()')
+              .qrw-icon.qrw-icon-cyan
+                i.fas.fa-headset
+              .qrw-text Liên hệ chuyên gia
+              i.fas.fa-chevron-right.qrw-arrow
+
+  //- Create Bulletin Modal
+  #createBulletinModal.modal-overlay.hidden
+    .modal-box
+      .modal-header
+        h3
+          i.fas.fa-plus-circle
+          | Tạo Công Báo Mới
+        button.modal-close(onclick='closeCreateBulletin()')
+          i.fas.fa-times
+      .modal-body
+        .form-group
+          label Tiêu đề
+          input#newBulletinTitle.form-control(type='text', placeholder='Tiêu đề công báo...')
+        .form-group
+          label Loại
+          select#newBulletinType.form-control
+            option(value='Routine Bulletin') Công báo thường xuyên
+            option(value='Monthly Report') Báo cáo tháng
+            option(value='High Salinity Alert') Cảnh báo độ mặn cao
+        .form-group
+          label Từ ngày
+          input#newBulletinFrom.form-control(type='date')
+        .form-group
+          label Đến ngày
+          input#newBulletinTo.form-control(type='date')
+        .form-group
+          label Nội dung
+          textarea#newBulletinContent.form-control(rows=4 placeholder='Nội dung công báo...')
+      .modal-footer
+        button.btn.btn-secondary(onclick='closeCreateBulletin()') Hủy
+        button#deleteBulletinBtn.btn.btn-danger(style='display:none' onclick='deleteBulletin(editingBulletinId)')
+          i.fas.fa-trash
+          | Xóa
+        button#submitBulletinBtn.btn.btn-primary(onclick='submitBulletin()')
+          i.fas.fa-save
+          | Tạo công báo
+
+block scripts
+  script.
+    let allBulletins = [];
+    let displayedCount = 0;
+    const PAGE_SIZE = 5;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      loadLatestBulletins();
+      // hide create button if not logged in/editor
+      if (!isBulletinEditor()) {
+        const btn = document.getElementById('createBulletinBtn');
+        if (btn) btn.style.display = 'none';
+      }
+    });
+
+    async function loadLatestBulletins() {
+      document.getElementById('bulletinsLoading').classList.remove('hidden');
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/bulletins/latest`);
+        const data = await response.json();
+        if (data.metadata && Array.isArray(data.metadata)) {
+          allBulletins = data.metadata;
+          displayedCount = 0;
+          document.getElementById('bulletinsList').innerHTML = '';
+          loadMoreBulletins();
+        }
+      } catch (error) {
+        console.error('Error loading bulletins:', error);
+        document.getElementById('bulletinsList').innerHTML =
+          '<div class="empty-state"><i class="fas fa-exclamation-circle"></i><p>Lỗi tải công báo</p></div>';
+      } finally {
+        document.getElementById('bulletinsLoading').classList.add('hidden');
+      }
+    }
+
+    // load commune options for weather widget
+    document.addEventListener('DOMContentLoaded', function() {
+      loadCommunes();
+    });
+
+    async function loadCommunes() {
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/weather/districts`);
+        const data = await response.json();
+        if (data.metadata && Array.isArray(data.metadata)) {
+          populateCommuneSelect(data.metadata);
+        } else {
+          console.warn('No commune data received');
+        }
+      } catch (err) {
+        console.error('Error loading communes:', err);
+      }
+    }
+
+    function populateCommuneSelect(list) {
+      const select = document.getElementById('communeSelect');
+      if (!select) return;
+      list.forEach(item => {
+        const opt = document.createElement('option');
+        opt.value = item.ma_xa || '';
+        opt.textContent = item.district_name
+          ? `${item.district_name} (${item.ma_xa})`
+          : item.ma_xa;
+        select.appendChild(opt);
+      });
+    }
+
+    function loadMoreBulletins() {
+      const listDiv = document.getElementById('bulletinsList');
+      const slice = allBulletins.slice(displayedCount, displayedCount + PAGE_SIZE);
+      if (allBulletins.length === 0 && displayedCount === 0) {
+        listDiv.innerHTML = '<div class="empty-state"><i class="fas fa-newspaper"></i><p>Không có công báo</p></div>';
+        document.getElementById('loadMoreBtn').style.display = 'none';
+        return;
+      }
+      slice.forEach(b => listDiv.appendChild(buildBulletinCard(b)));
+      displayedCount += slice.length;
+      document.getElementById('loadMoreBtn').style.display =
+        displayedCount >= allBulletins.length ? 'none' : 'inline-flex';
+    }
+
+    function getBulletinTypeClass(type) {
+      if (!type) return 'btype-routine';
+      const t = type.toLowerCase();
+      if (t.includes('alert') || t.includes('salinity')) return 'btype-alert';
+      if (t.includes('monthly') || t.includes('report')) return 'btype-monthly';
+      return 'btype-routine';
+    }
+
+    function isBulletinEditor() {
+      try {
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        return user && (user.role === 'admin' || user.role === 'forecaster' || user.role === 'canbocanbovien');
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function buildBulletinCard(b) {
+      const card = document.createElement('div');
+      card.className = 'bulletin-card-new';
+      const fromDate = b.from_date ? new Date(b.from_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+      const toDate = b.to_date ? new Date(b.to_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
+      const type = b.type || 'Routine Bulletin';
+      const typeClass = getBulletinTypeClass(type);
+      const views = b.views || Math.floor(Math.random()*3000)+100;
+      const files = b.files || Math.floor(Math.random()*5)+1;
+      const content = b.content || '';
+      const preview = content.length > 200 ? content.slice(0,200) + '...' : content;
+      let innerHtml = `
+        <div class="bcn-top">
+          <span class="btype-badge ${typeClass}">${type}</span>
+          <span class="bcn-date">${fromDate} - ${toDate}</span>
+        </div>
+        <h3 class="bcn-title">${b.title || 'Không có tiêu đề'}</h3>
+        <p class="bcn-preview">${preview}</p>
+        <div class="bcn-footer">
+          <span class="bcn-meta"><i class="fas fa-eye"></i> ${views.toLocaleString()} lượt xem</span>
+          <span class="bcn-meta"><i class="fas fa-paperclip"></i> ${files} tệp</span>
+        </div>
+      `;
+      if (isBulletinEditor()) {
+        innerHtml += `
+          <div class="bcn-actions">
+            <button class="btn btn-icon btn-sm edit-btn" title="Chỉnh sửa"><i class="fas fa-edit"></i></button>
+            <button class="btn btn-icon btn-sm delete-btn" title="Xóa"><i class="fas fa-trash"></i></button>
+          </div>
+        `;
+      }
+      card.innerHTML = innerHtml;
+      if (isBulletinEditor()) {
+        card.querySelector('.edit-btn').addEventListener('click', () => openEditBulletin(b));
+        card.querySelector('.delete-btn').addEventListener('click', () => deleteBulletin(b.id));
+      }
+      return card;
+    }
+
+    async function searchWeatherForecast() {
+      const select = document.getElementById('communeSelect');
+      const code = select ? select.value : '';
+      if (!code) { alert('Vui lòng chọn một xã'); return; }
+      const btn = document.getElementById('weatherSearchBtn');
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+      btn.disabled = true;
+
+      try {
+        const token = localStorage.getItem('access_token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const resp = await fetch(`${window.API_BASE_URL}/weather/forecast/${code}`, { headers });
+        if (!resp.ok) throw new Error('Không tìm thấy');
+        const data = await resp.json();
+        if (data.metadata && Array.isArray(data.metadata)) {
+          displayWCWForecast(data.metadata, code);
+        }
+      } catch(e) {
+        document.getElementById('wcwForecastList').innerHTML =
+          '<p style="color:var(--danger);font-size:12px;padding:8px 0">Không tìm thấy dữ liệu</p>';
+      } finally {
+        btn.innerHTML = '<i class="fas fa-search"></i>';
+        btn.disabled = false;
+      }
+    }
+
+    function displayWCWForecast(slots, code) {
+      const chartEl = document.getElementById('weatherChart');
+      const locName = document.getElementById('wcwLocationName');
+      locName.style.display = 'block';
+      document.getElementById('wcwLocationNameText').textContent = code;
+
+      const times = slots.map(s => s.time || '');
+      const temps = slots.map(s => Math.round(s.temperature || 0));
+      const hums = slots.map(s => s.humidity || 0);
+
+      if (window.weatherChartInstance) {
+        window.weatherChartInstance.data.labels = times;
+        window.weatherChartInstance.data.datasets[0].data = temps;
+        window.weatherChartInstance.data.datasets[1].data = hums;
+        window.weatherChartInstance.update();
+      } else {
+        window.weatherChartInstance = new Chart(chartEl.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: times,
+            datasets: [
+              {
+                label: 'Nhiệt độ (°C)',
+                data: temps,
+                borderColor: '#fbbf24',
+                backgroundColor: 'rgba(251,191,36,0.2)',
+                yAxisID: 'y1',
+                tension: 0.3
+              },
+              {
+                label: 'Độ ẩm (%)',
+                data: hums,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.2)',
+                yAxisID: 'y2',
+                tension: 0.3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { display: true, grid: { display: false } },
+              y1: { type: 'linear', position: 'left', title: { display: true, text: 'Nhiệt độ (°C)' } },
+              y2: { type: 'linear', position: 'right', title: { display: true, text: 'Độ ẩm (%)' }, grid: { drawOnChartArea: false } }
+            }
+          }
+        });
+      }
+
+      // hide old slot list
+      const list = document.getElementById('wcwForecastList');
+      if (list) list.style.display = 'none';
+
+      const stationBar = document.getElementById('wcwStationBar');
+      stationBar.style.display = 'flex';
+      document.getElementById('wcwStationText').textContent = `Trạm: ${code}`;
+    }
+
+    function getWeatherIconClass(weather) {
+      const w = weather.toLowerCase();
+      if (w.includes('rain') || w.includes('mưa')) return 'fa-cloud-rain';
+      if (w.includes('sunny') || w.includes('nắng') || w.includes('clear')) return 'fa-sun';
+      if (w.includes('cloud') || w.includes('mây')) return 'fa-cloud';
+      return 'fa-cloud';
+    }
+
+    let editingBulletinId = null;
+    function openCreateBulletin() {
+      if (!isBulletinEditor()) {
+        showNotification('Bạn cần đăng nhập để tạo công báo', 'error');
+        return;
+      }
+      editingBulletinId = null;
+      document.getElementById('createBulletinModal').classList.remove('hidden');
+      document.getElementById('createBulletinModal').querySelector('.modal-header h3').innerHTML =
+        "<i class='fas fa-plus-circle'></i> Tạo Công Báo Mới";
+      document.getElementById('newBulletinTitle').value = '';
+      document.getElementById('newBulletinType').value = 'Routine Bulletin';
+      document.getElementById('newBulletinFrom').value = '';
+      document.getElementById('newBulletinTo').value = '';
+      document.getElementById('newBulletinContent').value = '';
+      document.getElementById('submitBulletinBtn').innerHTML = '<i class="fas fa-save"></i> Tạo công báo';
+      const delBtn = document.getElementById('deleteBulletinBtn');
+      if (delBtn) delBtn.style.display = 'none';
+    }
+    function openEditBulletin(b) {
+      editingBulletinId = b.id;
+      document.getElementById('createBulletinModal').classList.remove('hidden');
+      document.getElementById('createBulletinModal').querySelector('.modal-header h3').innerHTML =
+        "<i class='fas fa-edit'></i> Chỉnh sửa công báo";
+      document.getElementById('newBulletinTitle').value = b.title || '';
+      document.getElementById('newBulletinType').value = b.type || '';
+      document.getElementById('newBulletinFrom').value = b.from_date || '';
+      document.getElementById('newBulletinTo').value = b.to_date || '';
+      document.getElementById('newBulletinContent').value = b.content || '';
+      document.getElementById('submitBulletinBtn').innerHTML = '<i class="fas fa-save"></i> Cập nhật';
+      const delBtn = document.getElementById('deleteBulletinBtn');
+      if (delBtn) delBtn.style.display = 'inline-block';
+    }
+    function closeCreateBulletin() {
+      document.getElementById('createBulletinModal').classList.add('hidden');
+      editingBulletinId = null;
+      const heading = document.querySelector('#createBulletinModal .modal-header h3');
+      if (heading) heading.innerHTML = "<i class='fas fa-plus-circle'></i> Tạo Công Báo Mới";
+      const submitBtn = document.getElementById('submitBulletinBtn');
+      if (submitBtn) submitBtn.innerHTML = '<i class="fas fa-save"></i> Tạo công báo';
+      const delBtn = document.getElementById('deleteBulletinBtn');
+      if (delBtn) delBtn.style.display = 'none';
+    }
+
+    async function submitBulletin() {
+      if (!isBulletinEditor()) {
+        showNotification('Bạn cần đăng nhập để thao tác', 'error');
+        return;
+      }
+      const title = document.getElementById('newBulletinTitle').value.trim();
+      const type = document.getElementById('newBulletinType').value;
+      const from = document.getElementById('newBulletinFrom').value;
+      const to = document.getElementById('newBulletinTo').value;
+      const content = document.getElementById('newBulletinContent').value.trim();
+      if (!title || !content) { alert('Vui lòng điền đầy đủ thông tin'); return; }
+      try {
+        const token = localStorage.getItem('access_token');
+        const method = editingBulletinId ? 'PATCH' : 'POST';
+        const url = editingBulletinId ?
+          `${window.API_BASE_URL}/salinity/bulletins/${editingBulletinId}` :
+          `${window.API_BASE_URL}/salinity/bulletins/`;
+        const resp = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ title, type, from_date: from, to_date: to, content })
+        });
+        if (resp.ok) {
+          closeCreateBulletin();
+          loadLatestBulletins();
+          if (typeof loadDashboard === 'function') loadDashboard();
+        } else {
+          const d = await resp.json();
+          alert(d.message || 'Lỗi xử lý công báo');
+        }
+      } catch(e) {
+        alert('Lỗi kết nối: ' + e.message);
+      }
+    }
+
+    async function deleteBulletin(id) {
+      if (!confirm('Bạn có chắc muốn xóa công báo này?')) return;
+      try {
+        const token = localStorage.getItem('access_token');
+        const resp = await fetch(`${window.API_BASE_URL}/salinity/bulletins/${id}`, {
+          method: 'DELETE',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (resp.ok) {
+          loadLatestBulletins();
+          if (typeof loadDashboard === 'function') loadDashboard();
+        } else {
+          const d = await resp.json();
+          alert(d.message || 'Lỗi xóa công báo');
+        }
+      } catch (e) {
+        alert('Lỗi kết nối: ' + e.message);
+      }
+    }
+
+    function exportWeeklyData() { console.log('Export weekly data'); }
+    function viewEmergencyProcedures() { console.log('Emergency procedures'); }
+    function contactExpert() { console.log('Contact expert'); }

@@ -1,0 +1,215 @@
+extends ../layouts/main
+
+block content
+  .station-detail-container
+    .detail-controls
+      .control-group
+        .form-group
+          label(for='detailStationId') Mã trạm
+          input#detailStationId.form-control(
+            type='text',
+            placeholder='Nhập mã trạm'
+          )
+
+        .form-group
+          label(for='fromDate') Từ ngày
+          input#fromDate.form-control(
+            type='date',
+            value=new Date(new Date().setDate(new Date().getDate() - 30)).toISOString().split('T')[0]
+          )
+
+        .form-group
+          label(for='toDate') Đến ngày
+          input#toDate.form-control(
+            type='date',
+            value=new Date().toISOString().split('T')[0]
+          )
+
+        button.btn.btn-primary#loadDetailBtn(onclick='loadStationDetail()')
+          i.fas.fa-search
+          span Tìm kiếm
+
+    .loading-spinner#detailLoading.hidden
+      i.fas.fa-spinner.fa-spin
+      span Đang tải...
+
+    #detailContent.detail-content.hidden
+      .station-info-card
+        .info-grid
+          .info-item
+            .info-label Mã trạm
+            .info-value#stationInfoId
+
+          .info-item
+            .info-label Tên trạm
+            .info-value#stationInfoName
+
+          .info-item
+            .info-label Sông
+            .info-value#stationInfoRiver
+
+          .info-item
+            .info-label Khoảng cách (km)
+            .info-value#stationInfoDistance
+
+      .summary-section
+        h3 Thống kê trong khoảng thời gian
+        .summary-grid
+          .summary-item
+            .summary-label Độ mặn cao nhất
+            .summary-value#maxSalinity
+              i.fas.fa-spinner.fa-spin
+            .summary-unit ppt
+
+          .summary-item
+            .summary-label Ngày xảy ra
+            .summary-value#maxSalinityDate
+
+      .chart-section
+        h3 Biểu đồ độ mặn
+        canvas#stationChart
+
+      .data-table-section
+        h3 Dữ liệu chi tiết
+        .table-responsive
+          table.table#stationDataTable
+            thead
+              tr
+                th Ngày
+                th Độ mặn (ppt)
+            tbody#stationDataTableBody
+
+block scripts
+  script.
+    let stationChart = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const stationId = urlParams.get('station_id');
+      if (stationId) {
+        document.getElementById('detailStationId').value = stationId;
+        loadStationDetail();
+      }
+    });
+
+    async function loadStationDetail() {
+      const stationId = document.getElementById('detailStationId').value;
+      const fromDate = document.getElementById('fromDate').value;
+      const toDate = document.getElementById('toDate').value;
+
+      if (!stationId || !fromDate || !toDate) {
+        showNotification('Vui lòng nhập đầy đủ thông tin', 'error');
+        return;
+      }
+
+      document.getElementById('detailLoading').classList.remove('hidden');
+      document.getElementById('detailContent').classList.add('hidden');
+
+      try {
+        const response = await fetch(
+          `${window.API_BASE_URL}/salinity/station?station_id=${stationId}&from=${fromDate}&to=${toDate}`
+        );
+        const data = await response.json();
+
+        if (data.metadata) {
+          displayStationDetail(data.metadata);
+          document.getElementById('detailContent').classList.remove('hidden');
+        } else {
+          showNotification('Không tìm thấy dữ liệu', 'error');
+        }
+      } catch (error) {
+        console.error('Error loading station detail:', error);
+        showNotification('Lỗi tải dữ liệu chi tiết trạm', 'error');
+      } finally {
+        document.getElementById('detailLoading').classList.add('hidden');
+      }
+    }
+
+    function displayStationDetail(data) {
+      if (data.station) {
+        document.getElementById('stationInfoId').textContent = data.station.station_id;
+        document.getElementById('stationInfoName').textContent = data.station.station_name;
+        document.getElementById('stationInfoRiver').textContent = data.station.river;
+        document.getElementById('stationInfoDistance').textContent = data.station.distance_km;
+      }
+
+      if (data.summary) {
+        document.getElementById('maxSalinity').textContent = 
+          (data.summary.max_salinity || 'N/A').toFixed(2);
+        document.getElementById('maxSalinityDate').textContent = 
+          new Date(data.summary.max_date).toLocaleDateString('vi-VN');
+      }
+
+      if (data.daily_data && Array.isArray(data.daily_data)) {
+        displayStationChart(data.daily_data);
+        displayStationTable(data.daily_data);
+      }
+    }
+
+    function displayStationChart(data) {
+      const ctx = document.getElementById('stationChart').getContext('2d');
+      
+      if (stationChart) {
+        stationChart.destroy();
+      }
+
+      const labels = data.map(d => new Date(d.date));
+      const values = data.map(d => d.salinity);
+
+      stationChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Độ mặn (ppt)',
+            data: values,
+            backgroundColor: 'rgba(0, 102, 204, 0.7)',
+            borderColor: '#0066cc',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: {
+              display: true
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                callback: function(val, index) {
+                  const date = this.getLabelForValue(val);
+                  if (date instanceof Date) {
+                    return date.toLocaleDateString('vi-VN');
+                  }
+                  return date;
+                }
+              }
+            },
+            y: {
+              beginAtZero: false,
+              title: {
+                display: true,
+                text: 'Độ mặn (ppt)'
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function displayStationTable(data) {
+      const tbody = document.getElementById('stationDataTableBody');
+      tbody.innerHTML = '';
+
+      data.forEach(item => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${new Date(item.date).toLocaleDateString('vi-VN')}</td>
+          <td>${item.salinity || 'N/A'}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }

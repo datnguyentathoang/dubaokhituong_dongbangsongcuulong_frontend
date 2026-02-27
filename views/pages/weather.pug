@@ -1,0 +1,200 @@
+extends ../layouts/main
+
+block content
+  .weather-container
+    .weather-search
+      .search-form
+        .form-group
+          label(for='districtSelect') Chọn xã
+          select#districtSelect.form-control(required)
+            option(value='') -- Chọn một xã --
+            #districtOptions
+
+        button.btn.btn-primary#searchWeatherBtn(onclick='loadWeatherForecast()')
+          i.fas.fa-search
+          span Xem dự báo
+
+    .loading-spinner#weatherLoading.hidden
+      i.fas.fa-spinner.fa-spin
+      span Đang tải dự báo thời tiết...
+
+    #weatherContent.weather-content.hidden
+      .weather-header
+        h3 Dự báo thời tiết cho xã:
+        strong#weatherDistrictName
+
+      .forecast-timeline
+        #forecastSlots
+
+      
+block scripts
+  script.
+    document.addEventListener('DOMContentLoaded', function() {
+      loadDistricts();
+    });
+
+    async function loadDistricts() {
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/weather/districts`);
+        const data = await response.json();
+
+        if (data.metadata && Array.isArray(data.metadata)) {
+          populateDistrictSelect(data.metadata);
+        } else {
+          console.warn('No districts data received');
+          loadDefaultDistricts();
+        }
+      } catch (error) {
+        console.error('Error loading districts:', error);
+        // Load default districts as fallback
+        loadDefaultDistricts();
+      }
+    }
+
+    function populateDistrictSelect(districts) {
+      const optionsDiv = document.getElementById('districtOptions');
+      optionsDiv.innerHTML = '';
+
+      districts.forEach(district => {
+        const option = document.createElement('option');
+        option.value = district.ma_xa;
+        option.textContent = `${district.district_name} (${district.ma_xa})`;
+        optionsDiv.appendChild(option);
+      });
+    }
+
+    function loadDefaultDistricts() {
+      // Fallback danh sách các xã mặc định
+      const defaultDistricts = [
+        { ma_xa: 'long_bien', district_name: 'Long Biên' },
+        { ma_xa: 'hai_ba_trung', district_name: 'Hai Bà Trưng' },
+        { ma_xa: 'hoan_kiem', district_name: 'Hoàn Kiếm' },
+        { ma_xa: 'thanh_xuan', district_name: 'Thanh Xuân' },
+        { ma_xa: 'dong_da', district_name: 'Đống Đa' },
+        { ma_xa: 'ba_dinh', district_name: 'Ba Đình' },
+        { ma_xa: 'cau_giay', district_name: 'Cầu Giấy' },
+        { ma_xa: 'nam_tu_liem', district_name: 'Nam Từ Liêm' },
+        { ma_xa: 'bac_tu_liem', district_name: 'Bắc Từ Liêm' },
+        { ma_xa: 'hoang_mai', district_name: 'Hoàng Mai' },
+        { ma_xa: 'thanh_tri', district_name: 'Thành Trì' },
+        { ma_xa: 'gia_lam', district_name: 'Gia Lâm' },
+        { ma_xa: 'dong_anh', district_name: 'Đông Anh' },
+        { ma_xa: 'soc_son', district_name: 'Sóc Sơn' }
+      ];
+
+      populateDistrictSelect(defaultDistricts);
+    }
+
+    async function loadWeatherForecast() {
+      const select = document.getElementById('districtSelect');
+      const maXa = select.value;
+      const selectedText = select.options[select.selectedIndex].text;
+      const token = localStorage.getItem('access_token');
+
+      if (!token) {
+        showNotification('Vui lòng đăng nhập để xem dự báo thời tiết', 'error');
+        window.location.href = '/login';
+        return;
+      }
+
+      if (!maXa) {
+        showNotification('Vui lòng chọn một xã', 'error');
+        return;
+      }
+
+      document.getElementById('weatherLoading').classList.remove('hidden');
+      document.getElementById('weatherContent').classList.add('hidden');
+
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/weather/forecast/${maXa}`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!response.ok) {
+          showNotification('Không tìm thấy dữ liệu dự báo cho xã này', 'error');
+          return;
+        }
+
+        const data = await response.json();
+
+        if (data.metadata && Array.isArray(data.metadata)) {
+          displayWeatherForecast(selectedText, data.metadata);
+          document.getElementById('weatherContent').classList.remove('hidden');
+        }
+      } catch (error) {
+        console.error('Error loading weather forecast:', error);
+        showNotification('Lỗi tải dự báo thời tiết: ' + error.message, 'error');
+      } finally {
+        document.getElementById('weatherLoading').classList.add('hidden');
+      }
+    }
+
+    function displayWeatherForecast(districtName, forecastData) {
+      document.getElementById('weatherDistrictName').textContent = districtName;
+
+      const slotsDiv = document.getElementById('forecastSlots');
+      slotsDiv.innerHTML = '';
+
+      forecastData.forEach((slot, index) => {
+        const card = document.createElement('div');
+        card.className = 'forecast-card';
+        
+        const weatherIcon = getWeatherIcon(slot.weather);
+        
+        card.innerHTML = `
+          <div class="forecast-time">
+            <i class="fas fa-clock"></i>
+            ${slot.time}
+          </div>
+          
+          <div class="forecast-main">
+            <div class="weather-icon">
+              ${weatherIcon}
+            </div>
+            <div class="temperature">
+              <div class="temp-main">${Math.round(slot.temperature)}°C</div>
+              <div class="temp-feels">Cảm giác ${Math.round(slot.feels_like)}°C</div>
+            </div>
+          </div>
+
+          <div class="forecast-details">
+            <div class="detail-item">
+              <i class="fas fa-droplets"></i>
+              <span>Độ ẩm: ${slot.humidity}%</span>
+            </div>
+            <div class="detail-item">
+              <i class="fas fa-wind"></i>
+              <span>Gió: ${slot.wind_speed} m/s</span>
+            </div>
+            <div class="detail-item">
+              <i class="fas fa-cloud-rain"></i>
+              <span>Mưa: ${slot.rain} mm</span>
+            </div>
+            <div class="detail-item">
+              <i class="fas fa-cloud"></i>
+              <span>${slot.weather}</span>
+            </div>
+          </div>
+        `;
+        
+        slotsDiv.appendChild(card);
+      });
+    }
+
+    function getWeatherIcon(weather) {
+      const weatherLower = weather.toLowerCase();
+      
+      if (weatherLower.includes('mưa') || weatherLower.includes('rain')) {
+        return '<i class="fas fa-cloud-rain"></i>';
+      } else if (weatherLower.includes('nắng') || weatherLower.includes('sunny')) {
+        return '<i class="fas fa-sun"></i>';
+      } else if (weatherLower.includes('mây') || weatherLower.includes('cloud')) {
+        return '<i class="fas fa-cloud"></i>';
+      } else if (weatherLower.includes('sương') || weatherLower.includes('fog')) {
+        return '<i class="fas fa-cloud-fog"></i>';
+      } else {
+        return '<i class="fas fa-cloud"></i>';
+      }
+    }

@@ -1,0 +1,233 @@
+extends ../layouts/main
+
+block content
+  .stations-page
+    .stations-page-header
+      .stations-title-block
+        h2
+          i.fas.fa-map-marker-alt(style='color:var(--blue-400);margin-right:8px')
+          | Chi tiết giám sát trạm
+        p.subtitle Theo dõi độ mặn thời gian thực và cảm biến môi trường.
+      .stations-actions
+        button.btn.btn-primary(onclick='openAddStation()')
+          i.fas.fa-plus
+          | Thêm trạm mới
+        button.btn.btn-secondary(onclick='exportCSV()')
+          i.fas.fa-upload
+          | Xuất CSV
+
+    .stations-layout
+      .stations-left-col
+        .s-card
+          .loading-spinner#stationsLoading.hidden
+            i.fas.fa-spinner.fa-spin
+            span Đang tải...
+
+          .table-responsive
+            table.table#stationsTable
+              thead
+                tr
+                  th MÃ TRẠM
+                  th TÊN
+                  th SÔNG
+                  th KHOẢNG CÁCH (KM)
+                  th TRẠNG THÁI
+                  th HÀNH ĐỘNG
+              tbody#stationsTableBody
+
+        #detailSection.s-card.hidden
+          .detail-header
+            h3
+              | Xem chi tiết:&nbsp;
+              span#detailStationName
+            .detail-date-controls
+              span TỪ:
+              input#detailFromDate.form-control-sm(type='date', onchange="loadStationDailyData(currentStationId)")
+              span ĐẾN:
+              input#detailToDate.form-control-sm(type='date', onchange="loadStationDailyData(currentStationId)")
+
+          .detail-stats-grid
+            .detail-stat-card.dsc-red
+              .dsc-label
+                i.fas.fa-triangle-exclamation
+                span ĐỘ MẶN CAO NHẤT
+              .dsc-value#detailPeakSalinity —
+              .dsc-meta#detailPeakDate Ghi nhận ngày...
+
+            .detail-stat-card.dsc-blue
+              .dsc-label
+                i.fas.fa-rotate
+                span TRUNG BÌNH THÁNG
+              .dsc-value#detailMonthlyAvg —
+              .dsc-meta#detailVariance Sai lệch...
+
+          .detail-readings
+            .detail-readings-header
+              h4 Dữ liệu độ mặn hàng ngày
+              a.view-historical-btn(href='#') XEM BIỂU ĐỒ LỊCH SỬ
+            .table-responsive
+              table.table#dailySalinityTable
+                thead
+                  tr
+                    th NGÀY
+                    th TRUNG BÌNH PPT
+                    th NHỎ NHẤT
+                    th LỚN NHẤT
+                    th TRẠNG THÁI
+                tbody#dailySalinityBody
+
+      .stations-right-col
+        .s-card
+          .sr-section-title Vị trí trạm
+          .station-map-wrapper
+            .map-placeholder-content
+              i.fas.fa-map-location-dot
+              p Chọn trạm để xem vị trí
+          .map-coordinates#mapCoordinates(style='display:none')
+            i.fas.fa-map-marker-alt
+            span#mapCoordText
+
+        .s-card
+          .sr-section-title
+            i.fas.fa-circle-info(style='color:var(--blue-400)')
+            | &nbsp;Thông tin trạm
+          .metadata-rows
+            .meta-row
+              .meta-label Mẫu cảm biến
+              .meta-value#stationSensorModel YSI EXO2
+            .meta-row
+              .meta-label Ngày lắp đặt
+              .meta-value#stationInstalledDate Jan 12, 2021
+            .meta-row
+              .meta-label Kiểm tra pin lần cuối
+              .meta-value#stationBatteryDate Oct 15, 2023
+            .meta-row
+              .meta-label Loại mạng
+              .meta-value#stationNetworkType Satellite/LTE
+          button.btn.btn-secondary.btn-maintenance-log(onclick='viewMaintenanceLog()')
+            | Nhật ký bảo trì
+
+block scripts
+  script.
+    let currentStationId = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+      loadAllStations();
+    });
+
+    async function loadAllStations() {
+      document.getElementById('stationsLoading').classList.remove('hidden');
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/stations/all-station`);
+        const data = await response.json();
+        if (data.metadata && Array.isArray(data.metadata)) {
+          displayStations(data.metadata);
+        } else {
+          document.getElementById('stationsTableBody').innerHTML =
+            '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Không có dữ liệu trạm</td></tr>';
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('stationsTableBody').innerHTML =
+          '<tr><td colspan="6" style="text-align:center;color:var(--danger)">Lỗi tải dữ liệu</td></tr>';
+      } finally {
+        document.getElementById('stationsLoading').classList.add('hidden');
+      }
+    }
+
+    function displayStations(stations) {
+      const tbody = document.getElementById('stationsTableBody');
+      tbody.innerHTML = '';
+      stations.forEach(station => {
+        const row = document.createElement('tr');
+        row.style.cursor = 'pointer';
+        row.onclick = () => {
+          // Remove selected from all
+          document.querySelectorAll('#stationsTableBody tr').forEach(r => r.classList.remove('row-selected'));
+          row.classList.add('row-selected');
+          viewStationDetail(station.station_id, station.station_name);
+        };
+        const statusLabel = station.status || 'Active';
+        const statusClass = statusLabel.toLowerCase() === 'maintenance' ? 'status-caution' : 'status-stable';
+        row.innerHTML = `
+          <td><a class="station-id-link" href="#" onclick="event.preventDefault()">${station.station_id}</a></td>
+          <td>${station.station_name}</td>
+          <td>${station.river || '—'}</td>
+          <td>${station.distance_km || '—'}</td>
+          <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+          <td><button class="btn btn-icon btn-sm" title="Xem chi tiết"><i class="fas fa-chevron-down"></i></button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function viewStationDetail(stationId, stationName) {
+      currentStationId = stationId;
+      document.getElementById('detailSection').classList.remove('hidden');
+      document.getElementById('detailStationName').textContent = `${stationName} (${stationId})`;
+      const today = new Date();
+      const lastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+      document.getElementById('detailFromDate').value = lastMonth.toISOString().split('T')[0];
+      document.getElementById('detailToDate').value = today.toISOString().split('T')[0];
+      loadStationDailyData(stationId);
+      // scroll to detail section
+      document.getElementById('detailSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    async function loadStationDailyData(stationId) {
+      if (!stationId) return;
+      const from = document.getElementById('detailFromDate').value;
+      const to = document.getElementById('detailToDate').value;
+      try {
+        const response = await fetch(`${window.API_BASE_URL}/salinity/station?station_id=${stationId}&from=${from}&to=${to}`);
+        const data = await response.json();
+        if (data.metadata) {
+          displayDetailData(data.metadata);
+          displayDailySalinityTable(data.metadata.daily_data || []);
+        }
+      } catch (error) {
+        console.error('Error:', error);
+      }
+    }
+
+    function displayDetailData(data) {
+      if (data.summary) {
+        const peak = data.summary.max_salinity;
+        const avg = data.summary.avg_salinity;
+        document.getElementById('detailPeakSalinity').textContent =
+          (peak !== null && peak !== undefined ? peak.toFixed(2) : 'N/A') + ' PPT';
+        document.getElementById('detailMonthlyAvg').textContent =
+          (avg !== null && avg !== undefined ? avg.toFixed(2) : 'N/A') + ' PPT';
+        if (data.summary.max_salinity_date) {
+          document.getElementById('detailPeakDate').textContent =
+            'Recorded on ' + new Date(data.summary.max_salinity_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+        }
+        document.getElementById('detailVariance').textContent = 'Variance: N/A';
+      }
+    }
+
+    function displayDailySalinityTable(dailyData) {
+      const tbody = document.getElementById('dailySalinityBody');
+      tbody.innerHTML = '';
+      if (!dailyData.length) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">No data available</td></tr>';
+        return;
+      }
+      dailyData.forEach(item => {
+        const status = (item.salinity || item.mean_salinity) > 5 ? 'ELEVATED' : 'NORMAL';
+        const statusClass = status === 'NORMAL' ? 'status-stable' : 'status-caution';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${new Date(item.date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})}</td>
+          <td>${(item.salinity || item.mean_salinity || 0).toFixed(2)}</td>
+          <td>${(item.min_salinity || 0).toFixed(2)}</td>
+          <td>${(item.max_salinity || 0).toFixed(2)}</td>
+          <td><span class="status-badge ${statusClass}">${status}</span></td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    function openAddStation() { alert('Tính năng thêm trạm sẽ sớm ra mắt!'); }
+    function exportCSV() { alert('Đang xuất CSV...'); }
+    function viewMaintenanceLog() { alert('Xem nhật ký bảo trì'); }

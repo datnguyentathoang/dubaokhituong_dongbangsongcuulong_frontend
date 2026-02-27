@@ -1,0 +1,34 @@
+/* Dashboard custom overrides */
+
+/* Deeper card shadows */
+.s-card,
+.dashboard-section,
+.chart-wrapper {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+/* Dashboard section spacing */
+.dashboard-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  padding: var(--sp-lg);
+}
+
+/* Resource items in dashboard - add arrow on right */
+.resources-list .resource-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-md);
+  padding: var(--sp-md);
+  background: var(--bg-elevated);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  transition: all 0.2s;
+}
+
+.resources-list .resource-item:hover {
+  background: var(--bg-card);
+  border-color: var(--border-active);
+}
