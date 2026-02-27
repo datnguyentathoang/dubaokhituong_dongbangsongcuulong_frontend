@@ -241,10 +241,26 @@ block scripts
 
     function getBulletinTypeClass(type) {
       if (!type) return 'btype-routine';
-      const t = type.toLowerCase();
-      if (t.includes('alert') || t.includes('salinity')) return 'btype-alert';
-      if (t.includes('monthly') || t.includes('report')) return 'btype-monthly';
+      const t = String(type).toLowerCase();
+      if (t.includes('alert') || t.includes('cảnh báo')) return 'btype-alert';
+      if (t.includes('monthly') || t.includes('report') || t.includes('tháng')) return 'btype-monthly';
       return 'btype-routine';
+    }
+
+    // Trả về nhãn tiếng Việt cho loại công báo
+    function getBulletinTypeLabel(type) {
+      if (!type) return 'Công báo thường xuyên';
+      const t = String(type).toLowerCase();
+      if (t.includes('high salinity alert') || t.includes('alert') || t.includes('cảnh báo')) {
+        return 'Cảnh báo độ mặn cao';
+      }
+      if (t.includes('monthly report') || t.includes('monthly') || t.includes('report') || t.includes('tháng')) {
+        return 'Báo cáo tháng';
+      }
+      if (t.includes('routine bulletin') || t.includes('routine') || t.includes('thường xuyên')) {
+        return 'Công báo thường xuyên';
+      }
+      return type; // fallback nếu sau này bạn thêm loại mới
     }
 
     function isBulletinEditor() {
@@ -273,13 +289,14 @@ block scripts
       const toDate = b.to_date ? new Date(b.to_date).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : '';
       const type = b.type || 'Routine Bulletin';
       const typeClass = getBulletinTypeClass(type);
-      const views = b.views || Math.floor(Math.random()*3000)+100;
-      const files = b.files || Math.floor(Math.random()*5)+1;
+      const typeLabel = getBulletinTypeLabel(type);
+      const views = b.views || Math.floor(Math.random() * 3000) + 100;
+      const files = b.files || Math.floor(Math.random() * 5) + 1;
       const content = b.content || '';
-      const preview = content.length > 200 ? content.slice(0,200) + '...' : content;
+      const preview = content.length > 200 ? content.slice(0, 200) + '...' : content;
       let innerHtml = `
         <div class="bcn-top">
-          <span class="btype-badge ${typeClass}">${type}</span>
+          <span class="btype-badge ${typeClass}">${typeLabel}</span>
           <span class="bcn-date">${fromDate} - ${toDate}</span>
         </div>
         <h3 class="bcn-title">${b.title || 'Không có tiêu đề'}</h3>
