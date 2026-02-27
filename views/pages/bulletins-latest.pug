@@ -10,13 +10,12 @@ block content
         p.subtitle Quản lý môi trường theo thời gian thực và dự báo vùng
       .bulletins-actions
         .archive-select-wrapper
-          span LƯU TRỮ:
-          select#archiveMonth.form-control-sm
-            option(value='') Chọn tháng
-            option(value='2025-10') Oct 2025
-            option(value='2025-09') Sep 2025
-            option(value='2025-08') Aug 2025
-            option(value='2025-07') Jul 2025
+          span LỌC:
+          select#archiveMonth.form-control-sm(onchange='onArchiveFilterChange(this.value)')
+            option(value='latest' selected) Mới nhất
+            option(value='3m') Trong 3 tháng gần đây
+            option(value='6m') Trong 6 tháng gần đây
+            option(value='all') Tất cả công báo
         button.btn.btn-primary#createBulletinBtn(onclick='openCreateBulletin()')
           i.fas.fa-plus
           | Tạo công báo
@@ -28,9 +27,12 @@ block content
             i.fas.fa-list
             span Công báo mới nhất
           .bulletins-list-filter
-            span.filter-label LƯU TRỮ:
-            select#archiveMonthSmall.form-control-compact
-              option(value='') Chọn tháng
+            span.filter-label LỌC:
+            select#archiveMonthSmall.form-control-compact(onchange='onArchiveFilterChange(this.value)')
+              option(value='latest' selected) Mới nhất
+              option(value='3m') 3 tháng gần đây
+              option(value='6m') 6 tháng gần đây
+              option(value='all') Tất cả
 
         .loading-spinner#bulletinsLoading.hidden
           i.fas.fa-spinner.fa-spin
@@ -126,6 +128,8 @@ block scripts
     let allBulletins = [];
     let displayedCount = 0;
     const PAGE_SIZE = 5;
+    // filter: 'latest' | '3m' | '6m' | 'all'
+    let currentArchiveFilter = 'latest';
 
     document.addEventListener('DOMContentLoaded', function() {
       loadLatestBulletins();
@@ -143,9 +147,10 @@ block scripts
         const data = await response.json();
         if (data.metadata && Array.isArray(data.metadata)) {
           allBulletins = data.metadata;
+          // reset pagination & render theo filter hiện tại
           displayedCount = 0;
           document.getElementById('bulletinsList').innerHTML = '';
-          loadMoreBulletins();
+          loadMoreBulletins(true);
         }
       } catch (error) {
         console.error('Error loading bulletins:', error);
@@ -188,10 +193,42 @@ block scripts
       });
     }
 
-    function loadMoreBulletins() {
+    function getFilteredBulletins() {
+      if (!Array.isArray(allBulletins)) return [];
+      const now = new Date();
+
+      if (currentArchiveFilter === 'all' || currentArchiveFilter === 'latest') {
+        // 'latest' dùng toàn bộ danh sách đã được backend sort mới -> cũ,
+        // pagination sẽ hiển thị dần dần các công báo cũ hơn.
+        return allBulletins;
+      }
+
+      let months = 0;
+      if (currentArchiveFilter === '3m') months = 3;
+      else if (currentArchiveFilter === '6m') months = 6;
+      if (!months) return allBulletins;
+
+      const msPerMonth = 1000 * 60 * 60 * 24 * 30;
+      return allBulletins.filter((b) => {
+        if (!b.created_at) return false;
+        const created = new Date(b.created_at);
+        const diffMs = now - created;
+        const diffMonths = diffMs / msPerMonth;
+        return diffMonths <= months;
+      });
+    }
+
+    function loadMoreBulletins(reset = false) {
       const listDiv = document.getElementById('bulletinsList');
-      const slice = allBulletins.slice(displayedCount, displayedCount + PAGE_SIZE);
-      if (allBulletins.length === 0 && displayedCount === 0) {
+      const filtered = getFilteredBulletins();
+
+      if (reset) {
+        displayedCount = 0;
+        listDiv.innerHTML = '';
+      }
+
+      const slice = filtered.slice(displayedCount, displayedCount + PAGE_SIZE);
+      if (filtered.length === 0 && displayedCount === 0) {
         listDiv.innerHTML = '<div class="empty-state"><i class="fas fa-newspaper"></i><p>Không có công báo</p></div>';
         document.getElementById('loadMoreBtn').style.display = 'none';
         return;
@@ -199,7 +236,7 @@ block scripts
       slice.forEach(b => listDiv.appendChild(buildBulletinCard(b)));
       displayedCount += slice.length;
       document.getElementById('loadMoreBtn').style.display =
-        displayedCount >= allBulletins.length ? 'none' : 'inline-flex';
+        displayedCount >= filtered.length ? 'none' : 'inline-flex';
     }
 
     function getBulletinTypeClass(type) {
@@ -217,6 +254,16 @@ block scripts
       } catch (e) {
         return false;
       }
+    }
+
+    function onArchiveFilterChange(value) {
+      currentArchiveFilter = value || 'latest';
+      // đồng bộ 2 combobox lớn/nhỏ
+      const big = document.getElementById('archiveMonth');
+      const small = document.getElementById('archiveMonthSmall');
+      if (big && big.value !== value) big.value = value;
+      if (small && small.value !== value) small.value = value;
+      loadMoreBulletins(true);
     }
 
     function buildBulletinCard(b) {
