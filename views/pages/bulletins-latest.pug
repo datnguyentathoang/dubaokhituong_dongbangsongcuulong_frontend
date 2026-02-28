@@ -315,7 +315,7 @@ block scripts
       const views = b.views || Math.floor(Math.random() * 3000) + 100;
       const files = b.files || Math.floor(Math.random() * 5) + 1;
       const content = b.content || '';
-      const preview = content.length > 200 ? content.slice(0, 200) + '...' : content;
+      const preview = content;
       let innerHtml = `
         <div class="bcn-top">
           <span class="btype-badge ${typeClass}">${typeLabel}</span>

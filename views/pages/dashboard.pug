@@ -486,7 +486,7 @@ block scripts
           <span class="bcn-date">${fromDate} - ${toDate}</span>
         </div>
         <h3 class="bcn-title">${b.title || 'Không có tiêu đề'}</h3>
-        <p class="bcn-preview">${(b.content||'').slice(0,100)}...</p>
+        <p class="bcn-preview">${b.content||''}</p>
       `;
       card.innerHTML = inner;
       card.addEventListener('click', () => {
